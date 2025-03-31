@@ -1,0 +1,25 @@
+{
+  "name": "pubconlsp",
+  "version": "1.0.0",
+  "description": "A lSP server for the pubcon yaml file",
+  "main": "./lib/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "start": "ts-node src/index.ts"
+  },
+  "author": {
+    "name": "DaringJoker"
+  },
+  "license": "ISC",
+  "devDependencies": {
+    "typescript": "^5.4.3",
+    "eslint": "^8.57.0",
+    "ts-node": "^10.9.2"
+  },
+  "files": [
+    "./bin/*",
+    "./lib/*"
+  ],
+  "typings": "./lib/index.d.ts"
+}
