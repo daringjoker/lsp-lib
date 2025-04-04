@@ -1,6 +1,8 @@
 import { logger, l } from "./lib/logger";
+import _ from "lodash";
+import { readFileSync } from "fs";
 import { LSPBuilder, LSP_TRANSPORTS } from "./lib/protocol/LSPBuilder";
-
+const THRESHOLD_SCORE = 0.7;
 logger.log("Staring the application");
 
 const lsp = new LSPBuilder(LSP_TRANSPORTS.STDIO);
@@ -28,11 +30,22 @@ lsp.on("initialized", () => {
 });
 
 lsp.on("textDocument/didOpen", (params) => {
-  diagnostic(params.textDocument.uri, params.textDocument.text);
+  diagnostic_internal(params.textDocument.uri, params.textDocument.text);
+});
+
+lsp.on("textDocument/didChange", (params) => {
+  l`Got the didChange Event With the params: ${params}`;
+  diagnostic(
+    params.textDocument.uri,
+    params.contentChanges.map((x) => x.text).join(""),
+  );
 });
 
 lsp.on("textDocument/didSave", (params) => {
-  diagnostic(params.textDocument.uri, params.textDocument.text);
+  const realPath = params.textDocument.uri.split("//")[1];
+  if (realPath.length === 0) return;
+  const text = readFileSync(realPath, "utf-8");
+  diagnostic_internal(params.textDocument.uri, text);
 });
 
 export type PHIEntity = {
@@ -44,7 +57,7 @@ export type PHIEntity = {
 };
 
 export async function pukar() {
-  console.log("Pukar");
+  console.log("Jason");
 }
 
 async function findPhiEntity(text: string): Promise<PHIEntity[]> {
@@ -77,9 +90,15 @@ lsp.on("exit", () => {
   process.exit(0);
 });
 
-async function diagnostic(uri: string, text: string): Promise<void> {
+const diagnostic = _.throttle(diagnostic_internal, 300, {
+  leading: false,
+  trailing: true,
+});
+
+async function diagnostic_internal(uri: string, text: string): Promise<void> {
+  if (!text) return;
   l`Got the diagnostic event for ${uri} with text of length ${text.length}`;
-  function converOffsetToLineAndCharacter(offset: number): {
+  function convertOffsetToLineAndCharacter(offset: number): {
     line: number;
     character: number;
   } {
@@ -91,8 +110,8 @@ async function diagnostic(uri: string, text: string): Promise<void> {
   }
 
   function makeRange(entity: PHIEntity) {
-    const start = converOffsetToLineAndCharacter(entity.BeginOffset);
-    const end = converOffsetToLineAndCharacter(entity.EndOffset);
+    const start = convertOffsetToLineAndCharacter(entity.BeginOffset);
+    const end = convertOffsetToLineAndCharacter(entity.EndOffset);
     return {
       start,
       end,
@@ -106,14 +125,16 @@ async function diagnostic(uri: string, text: string): Promise<void> {
   const notification = {
     uri,
     diagnostics:
-      phiEntities?.map((entity) => {
-        return {
-          range: makeRange(entity),
-          severity: 1,
-          source: "DaringLSP",
-          message: `${entity.Text} is a potential PHI of type ${entity.Type}.Please Remove it.`,
-        };
-      }) ?? [],
+      phiEntities
+        ?.filter((entity) => entity.Score > THRESHOLD_SCORE)
+        .map((entity) => {
+          return {
+            range: makeRange(entity),
+            severity: 1,
+            source: "PHILsp",
+            message: `${entity.Text} is a potential PHI of type ${entity.Type}(${(+entity.Score).toFixed(2).toString()}).Please Remove it.`,
+          };
+        }) ?? [],
   };
 
   lsp.notify("textDocument/publishDiagnostics", notification);
