@@ -49,7 +49,7 @@ export async function pukar() {
 
 async function findPhiEntity(text: string): Promise<PHIEntity[]> {
   const response = await fetch(
-    "https://05jqa3k3vb.execute-api.ap-southeast-2.amazonaws.com/default/phiPioliceMock",
+    "https://x421kf5kkb.execute-api.ap-southeast-2.amazonaws.com/default/PHICore",
     {
       method: "POST",
       headers: {
@@ -65,11 +65,11 @@ async function findPhiEntity(text: string): Promise<PHIEntity[]> {
   }
 
   const data = (await response.json()) as {
-    Entites?: PHIEntity[];
+    Entities?: PHIEntity[];
     matches?: PHIEntity[];
   };
   l`Response from PHI API: ${response.status} ${response.statusText} ${data}`;
-  return data?.Entites ?? data.matches ?? [];
+  return data?.Entities ?? data.matches ?? [];
 }
 
 lsp.on("exit", () => {
