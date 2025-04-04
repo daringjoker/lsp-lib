@@ -1,15 +1,23 @@
 import { join } from "path";
 import { inspect } from "util";
 import { createWriteStream } from "fs";
+import { existsSync } from "fs";
 
-const logfile = createWriteStream(
-  join("/home/pukargiri/personals/pubconLsp/log.txt"),
-  { flags: "a" },
-);
+const logFilePath = join(__dirname, "../../log.txt");
+
+const shouldLog = existsSync(logFilePath);
+
+const logfile = shouldLog
+  ? createWriteStream(logFilePath, {
+      flags: "a",
+    })
+  : null;
+
 export const logger = {
   log(msg: string) {
+    if (!shouldLog || !logfile) return;
     const time = new Date().toTimeString().split(" ")[0];
-    logfile.write(`[${time}] DJLSP: ${msg}\n`);
+    logfile?.write(`[${time}] DJLSP: ${msg}\n`);
   },
 };
 

@@ -6,7 +6,7 @@ logger.log("Staring the application");
 const lsp = new LSPBuilder(LSP_TRANSPORTS.STDIO);
 
 lsp.beforeAnyEvent((event, req) => {
-  l`Got the event: ${event} with detail ${req}`;
+  l`Got the event: ${event} with details`;
   req.startTime = performance.now();
 });
 
@@ -28,54 +28,92 @@ lsp.on("initialized", () => {
 });
 
 lsp.on("textDocument/didOpen", (params) => {
-  l`Got the textDocument/didOpen event with params: ${params}`;
   diagnostic(params.textDocument.uri, params.textDocument.text);
 });
 
-lsp.on("textDocument/didChange", (params) => {
-  l`Got the textDocument/didChange event with params: ${params}`;
+lsp.on("textDocument/didSave", (params) => {
   diagnostic(params.textDocument.uri, params.textDocument.text);
+});
+
+export type PHIEntity = {
+  Score: number;
+  Text: string;
+  BeginOffset: number;
+  EndOffset: number;
+  Type: string;
+};
+
+export async function pukar() {
+  console.log("Pukar");
+}
+
+async function findPhiEntity(text: string): Promise<PHIEntity[]> {
+  const response = await fetch(
+    "https://05jqa3k3vb.execute-api.ap-southeast-2.amazonaws.com/default/phiPioliceMock",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ text }),
+    },
+  );
+
+  if (!response.ok) {
+    l`Error in fetching PHI entities: ${response.status} ${response.statusText}`;
+    return [];
+  }
+
+  const data = (await response.json()) as {
+    Entites?: PHIEntity[];
+    matches?: PHIEntity[];
+  };
+  l`Response from PHI API: ${response.status} ${response.statusText} ${data}`;
+  return data?.Entites ?? data.matches ?? [];
+}
+
+lsp.on("exit", () => {
+  l`Got the exit event`;
+  process.exit(0);
 });
 
 async function diagnostic(uri: string, text: string): Promise<void> {
-  l`Checking the first word of the document: ${text}`;
-  if (!text) return;
-  if (uri.split("//")[1].length === 0) return;
-  function makeRange(index: number, len: number) {
-    const lines = text.slice(0, index).split("\n");
+  l`Got the diagnostic event for ${uri} with text of length ${text.length}`;
+  function converOffsetToLineAndCharacter(offset: number): {
+    line: number;
+    character: number;
+  } {
+    const lines = text.slice(0, offset).split("\n");
     return {
-      start: {
-        line: lines.length - 1,
-        character: lines[lines.length - 1].length,
-      },
-      end: {
-        line: lines.length - 1,
-        character: lines[lines.length - 1].length + len,
-      },
+      line: lines.length - 1,
+      character: lines[lines.length - 1].length,
     };
   }
-  const indexes = [];
-  let startIndex = 0;
-  do {
-    const pukarIndexed = text.indexOf("pukar", startIndex);
-    if (pukarIndexed !== -1) {
-      indexes.push(pukarIndexed);
-      startIndex = pukarIndexed + 5;
-    } else {
-      startIndex = text.length;
-    }
-  } while (startIndex < text.length);
-  if (indexes.length === 0) return;
+
+  function makeRange(entity: PHIEntity) {
+    const start = converOffsetToLineAndCharacter(entity.BeginOffset);
+    const end = converOffsetToLineAndCharacter(entity.EndOffset);
+    return {
+      start,
+      end,
+    };
+  }
+  if (!text) return;
+  if (uri.split("//")[1].length === 0) return;
+  l`Fetching Entities for the text`;
+  const phiEntities = await findPhiEntity(text);
+  l`Waiting for PHI entities to be found: ${phiEntities}`;
   const notification = {
     uri,
-    diagnostics: indexes.map((firstSpace) => {
-      return {
-        range: makeRange(firstSpace, 5),
-        severity: 1,
-        source: "DaringLSP",
-        message: `'pukar' is potential PHI. Consider removing it.`,
-      };
-    }),
+    diagnostics:
+      phiEntities?.map((entity) => {
+        return {
+          range: makeRange(entity),
+          severity: 1,
+          source: "DaringLSP",
+          message: `${entity.Text} is a potential PHI of type ${entity.Type}.Please Remove it.`,
+        };
+      }) ?? [],
   };
 
   lsp.notify("textDocument/publishDiagnostics", notification);
